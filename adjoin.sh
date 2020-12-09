@@ -57,16 +57,16 @@ function generate_hostname()
     return 0
 }
 
-function do_adedit()
-{
-    if [ -f /etc/centrifydc/centrifydc-adedit ];then
-        existing_hostname=`hostname`
-        host_name="`echo $existing_hostname | cut -d. -f1`"
-        /etc/centrifydc/centrifydc-adedit $host_name
-        r=$?
-        [ $r -ne 0 ] && echo "$CENTRIFY_MSG_PREX: adedit script failed" && return 1
-    fi
-}
+#function do_adedit()
+#{
+#    if [ -f /etc/centrifydc/centrifydc-adedit ];then
+#        existing_hostname=`hostname`
+#        host_name="`echo $existing_hostname | cut -d. -f1`"
+#        /etc/centrifydc/centrifydc-adedit $host_name
+#        r=$?
+#        [ $r -ne 0 ] && echo "$CENTRIFY_MSG_PREX: adedit script failed" && return 1
+#    fi
+#}
 
 # Comment this out since it doesn't make much sense to generate hostname during reboot
 #generate_hostname

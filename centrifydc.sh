@@ -2,7 +2,7 @@
 
 ################################################################################
 #
-# Copyright (c) 2017-2020 Centrify Corporation
+# Copyright (c) 2017-2018 Centrify Corporation
 # 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,10 +23,14 @@
 # adjoin to Active Directory.
 #
 # This script is tested on AWS Autoscaling using the following EC2 AMIs:
-# - Red Hat Enterprise Linux 7.3 or later               x86_64
-# - Red Hat Enterprise Linux 8                          x86_64
+# - Red Hat Enterprise Linux 6.5                        32bit
+# - Red Hat Enterprise Linux 6.5                        x86_64
+# - Red Hat Enterprise Linux 7.3                        x86_64
 # - Ubuntu Server 16.04 LTS (HVM), SSD Volume Type      x86_64
 # - Ubuntu Server 18.04 LTS (HVM), SSD Volume Type      x86_64
+# - Amazon Linux AMI 2014.09                            32bit
+# - Amazon Linux AMI 2016.09.1.20161221 HVM             x86_64
+# - Amazon Linux AMI 2016.09.1.20161221  PV             x86_64
 # - Amazon Linux 2 LTS
 # - CentOS 7.2                                          x86_64
 # - SUSE Linux Enterprise Server 12 SP4 (HVM)           x86_64
@@ -41,22 +45,18 @@
 # aws s3 cp will succeed.
 function upgrade_awscli()
 {
-    if ! python3 --version ;then
+    if ! python --version ;then
         case "$OS_NAME" in
-        rhel|centos)
-            yum install python3 -y
-            r=$?
-            ;;
-	amzn)
-	    yum install python34 -y
+        rhel|amzn|centos)
+            yum install python -y
             r=$?
             ;;
         ubuntu)
-            apt-get -y install python3
+            apt-get -y install python
             r=$?
             ;;
         sles)
-            zypper --non-interactive install python3
+            zypper --non-interactive install python
             r=$?
             ;;
         *)
@@ -69,18 +69,8 @@ function upgrade_awscli()
         fi
     fi
     if ! pip --version ;then
-    	case "$OS_NAME" in 
-        ubuntu)
-            case "$OS_VERSION" in
-            16|16.*) :
-                ;;
-            *)
-                apt-get -y install python3-distutils 
-                ;;  
-            esac
-        esac
         curl --fail -s -O https://bootstrap.pypa.io/get-pip.py
-        python3 get-pip.py
+        python get-pip.py
         r=$r
         if [ $r -ne 0 ];then
             echo "$CENTRIFY_MSG_PREX: pip installation failed"
@@ -114,16 +104,12 @@ function prerequisite()
     if [ "$CENTRIFYDC_JOIN_TO_AD" = "yes" -a "$CENTRIFYDC_USE_CUSTOM_KEYTAB_FUNCTION" != "yes" ]; then
         # Ensure that aws cli installed, otherwise we cannot download login.keytab from S3 bucket.
         if ! aws --version ;then
-            if ! python3 --version ;then
+            if ! python --version ;then
                 case "$OS_NAME" in
-                rhel|centos)
-                    yum install python3 -y
+                rhel|amzn|centos)
+                    yum install python -y
                     r=$?
                     ;;
-		amzn)
-		    yum install python34 -y
-		    r=$?
-		    ;;
                 ubuntu)
                     case "$OS_VERSION" in
                     16|16.*)
@@ -134,11 +120,11 @@ function prerequisite()
                         ;;
                     esac
                     apt-get update
-                    apt-get -y install python3
+                    apt-get -y install python
                     r=$?
                     ;;
                 sles)
-                    zypper --non-interactive install python3
+                    zypper --non-interactive install python
                     r=$?
                     ;;
                 *)
@@ -151,18 +137,8 @@ function prerequisite()
                 fi
             fi
             if ! pip --version ;then
-	    	case "$OS_NAME" in 
-        	ubuntu)
-            	    case "$OS_VERSION" in
-            	    16|16.*) :
-                	 ;;
-            	    *)
-                	 apt-get -y install python3-distutils 
-                	 ;;  
-            	    esac
-        	esac
                 curl --fail -s -O https://bootstrap.pypa.io/get-pip.py
-                python3 get-pip.py
+                python get-pip.py
                 r=$r
                 if [ $r -ne 0 ];then
                     echo "$CENTRIFY_MSG_PREX: pip installation failed"
@@ -221,11 +197,22 @@ function prerequisite()
         r=$?
         [ $r -ne 0 ] && echo "$CENTRIFY_MSG_PREX: awscli configure failed" && return $r
     fi
+  
+    if [ "$ENABLE_SSM_AGENT" = "yes" ];then
+        install_aws_ssm_agent
+        r=$?
+        [ $r -ne 0 ] && return $r
+    fi
+  
     return 0
 }
 
 function check_config()
 {
+    if [ "$ENABLE_SSM_AGENT" != "yes" -a "$ENABLE_SSM_AGENT" != "no" ];then
+        echo "$CENTRIFY_MSG_PREX: invalid ENABLE_SSM_AGENT: $ENABLE_SSM_AGENT" && return 1
+    fi
+  
     if [ "$CENTRIFYDC_JOIN_TO_AD" != "no" -a "$CENTRIFYDC_JOIN_TO_AD" != "yes" ];then
         echo "$CENTRIFY_MSG_PREX: invalid CENTRIFYDC_JOIN_TO_AD: $CENTRIFYDC_JOIN_TO_AD" && return 1
     fi
@@ -238,9 +225,9 @@ function check_config()
         if [ "$CENTRIFYDC_ZONE_NAME" = "" ];then
             echo "$CENTRIFY_MSG_PREX: Must set CENTRIFYDC_ZONE_NAME !" && return 1
         fi
-        CENTRIFYDC_HOSTNAME_FORMAT=${CENTRIFYDC_HOSTNAME_FORMAT:-PRIVATE_IP}
+        CENTRIFYDC_HOSTNAME_FORMAT=${CENTRIFYDC_HOSTNAME_FORMAT:-EXISTING}
         case "$CENTRIFYDC_HOSTNAME_FORMAT" in
-        PRIVATE_IP|INSTANCE_ID)
+        PRIVATE_IP|INSTANCE_ID|EXISTING)
             :
             ;;
         *)
@@ -353,6 +340,7 @@ function get_user_and_domain()
 function generate_hostname()
 {
     host_name=
+    CENTRIFYDC_HOSTNAME_FORMAT=${CENTRIFYDC_HOSTNAME_FORMAT:-EXISTING}
     case "$CENTRIFYDC_HOSTNAME_FORMAT" in
     PRIVATE_IP)
         private_ip=`curl --fail -s http://169.254.169.254/latest/meta-data/local-ipv4`
@@ -361,6 +349,11 @@ function generate_hostname()
     INSTANCE_ID)
         instance_id=`curl --fail -s http://169.254.169.254/latest/meta-data/instance-id`
         host_name=$instance_id
+        ;;
+    EXISTING)
+        #host_name=${HOSTNAME%%.*}
+        existing_hostname=`hostname`
+        host_name="`echo $existing_hostname | cut -d. -f1`"
         ;;
     "")
         :
@@ -372,10 +365,11 @@ function generate_hostname()
     if [ "$host_name" = "" ];then
         echo "$CENTRIFY_MSG_PREX: cannot set host_name, an internal error happened!" && return 1
     fi
-    if [ ${#host_name} -gt 15 ];then
+    # Why only 15? comment it out for now
+    #if [ ${#host_name} -gt 15 ];then
         # Only leave the start 15 chars.
-        host_name=`echo $host_name | sed -n 's/^\(.\{15,15\}\).*$/\1/p'`
-    fi
+    #    host_name=`echo $host_name | sed -n 's/^\(.\{15,15\}\).*$/\1/p'`
+    #fi
     echo "$host_name" | grep -E "[\._]" >/dev/null && host_name=`echo $host_name | sed -n 's/[\._]/-/gp'`
     # Setup hostname
     case "$OS_NAME" in
@@ -422,7 +416,7 @@ function prepare_for_adjoin()
 function do_adjoin()
 {
 
-    result=$(/usr/sbin/adjoin  $domain_name -z $CENTRIFYDC_ZONE_NAME --name `hostname` $CENTRIFYDC_ADJOIN_ADDITIONAL_OPTIONS)
+    result=$(/usr/sbin/adjoin $domain_name -z "$CENTRIFYDC_ZONE_NAME" --name `hostname` $CENTRIFYDC_ADJOIN_ADDITIONAL_OPTIONS)
     r=$?
     [ $r -ne 0 ] && echo "$CENTRIFY_MSG_PREX: adjoin failed!!" && return $r
     if echo $result | grep 'The directory service is busy' >/dev/null 2>&1 ;then
@@ -442,6 +436,19 @@ function do_adjoin()
     [ $? -ne 0 ] && echo "$CENTRIFY_MSG_PREX: adjoin failed!!" && return 1
 
     return 0
+}
+
+function do_adedit()
+{
+    if [ -f $centrifydc_deploy_dir/centrifydc-adedit ];then
+        cp -f $centrifydc_deploy_dir/centrifydc-adedit /etc/centrifydc/centrifydc-adedit
+        chmod 700 /etc/centrifydc/centrifydc-adedit
+        /etc/centrifydc/centrifydc-adedit `hostname` $join_user $ENTRIFYDC_ADJOIN_USER_PASSWORD
+        r=$?
+        [ $r -ne 0 ] && echo "$CENTRIFY_MSG_PREX: adedit script failed" && return 1
+        # Clean up the file because it contains password until we find a better way of doing it
+        rm -rf $centrifydc_deploy_dir/centrifydc-adedit
+    fi
 }
 
 function clean_files()
@@ -529,6 +536,9 @@ function start_deploy()
       do_adjoin
       r=$? && [ $r -ne 0 ] && return $r
       
+      #do_adedit
+      #r=$? && [ $r -ne 0 ] && return $r
+
       install_leave_join_service
     fi
   
@@ -556,7 +566,7 @@ detect_os
 r=$? 
 [ $r -ne 0 ] && echo "$CENTRIFY_MSG_PREX: detect OS failed [exit code=$r]" && exit $r
 
-check_supported_os centrifydc
+check_supported_os centrifydc not_support_ssm
 r=$? 
 [ $r -ne 0 ] && echo "$CENTRIFY_MSG_PREX: current OS is not supported [exit code=$r]" && exit $r
 

@@ -9,6 +9,9 @@ Type=forking
 
 EnvironmentFile=/etc/centrifydc/adjoin.env
 
+# Need to wait for awhile otherwise kinit will fail
+ExecStartPre=/bin/sleep 10
+
 ExecStartPre=/usr/share/centrifydc/kerberos/bin/kinit -kt $LOGIN_KEYTAB -C $ADJOINER
 ExecStart=/etc/centrifydc/scripts/systemd/adjoin.sh
 ExecStartPost=/bin/rm -rf /var/prestage_cache
