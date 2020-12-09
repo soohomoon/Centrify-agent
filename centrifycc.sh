@@ -422,8 +422,8 @@ function start_deploy()
     prepare_for_cenroll
     r=$? && [ $r -ne 0 ] && return $r
   
-    do_cenroll
-    r=$? && [ $r -ne 0 ] && return $r
+    #do_cenroll
+    #r=$? && [ $r -ne 0 ] && return $r
   
     install_unenroll_enroll_service
     
