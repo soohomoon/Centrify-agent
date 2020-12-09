@@ -532,11 +532,11 @@ function start_deploy()
       install_leave_join_service
     fi
   
-   # enable_sshd_password_auth
-   # r=$? && [ $r -ne 0 ] && return $r
+    enable_sshd_password_auth
+    r=$? && [ $r -ne 0 ] && return $r
 
-    #enable_sshd_challenge_response_auth
-    #r=$? && [ $r -ne 0 ] && return $r
+    enable_sshd_challenge_response_auth
+    r=$? && [ $r -ne 0 ] && return $r
 
     return 0
 }
