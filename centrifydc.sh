@@ -530,7 +530,7 @@ function start_deploy()
      # r=$? && [ $r -ne 0 ] && return $r
       
       install_leave_join_service
-    fi
+    #fi
   
    # enable_sshd_password_auth
    # r=$? && [ $r -ne 0 ] && return $r
