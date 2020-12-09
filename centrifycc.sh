@@ -404,30 +404,30 @@ function start_deploy()
     download_install_rpm $CENTRIFYCC_DOWNLOAD_PREFIX $CENTRIFYCC_RPM_NAME
     r=$? && [ $r -ne 0 ] && return $r
   
-    #disable_selinux
-    #r=$? && [ $r -ne 0 ] && return $r
+    disable_selinux
+    r=$? && [ $r -ne 0 ] && return $r
 
-    #enable_sshd_password_auth
-    #r=$? && [ $r -ne 0 ] && return $r
+    enable_sshd_password_auth
+    r=$? && [ $r -ne 0 ] && return $r
 
-    #enable_sshd_challenge_response_auth
-    #r=$? && [ $r -ne 0 ] && return $r
+    enable_sshd_challenge_response_auth
+    r=$? && [ $r -ne 0 ] && return $r
   
-    #enable_use_my_account
-    #r=$? && [ $r -ne 0 ] && return $r
+    enable_use_my_account
+    r=$? && [ $r -ne 0 ] && return $r
 
-    #vault_accounts
-    #r=$? && [ $r -ne 0 ] && return $r
+    vault_accounts
+    r=$? && [ $r -ne 0 ] && return $r
 
-    #prepare_for_cenroll
-    #r=$? && [ $r -ne 0 ] && return $r
+    prepare_for_cenroll
+    r=$? && [ $r -ne 0 ] && return $r
   
-    #do_cenroll
-    #r=$? && [ $r -ne 0 ] && return $r
+    do_cenroll
+    r=$? && [ $r -ne 0 ] && return $r
   
     install_unenroll_enroll_service
     
-    #handle_ignore_users_groups
+    handle_ignore_users_groups
     
     return 0
 }
