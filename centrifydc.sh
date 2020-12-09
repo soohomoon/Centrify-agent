@@ -513,30 +513,30 @@ function start_deploy()
     install_packages
     r=$? && [ $r -ne 0 ] && return $r
   
-    if [ "$CENTRIFYDC_JOIN_TO_AD" = "yes" ];then
-      get_keytab_file
-      r=$? && [ $r -ne 0 ] && return $r
+    #if [ "$CENTRIFYDC_JOIN_TO_AD" = "yes" ];then
+     # get_keytab_file
+     # r=$? && [ $r -ne 0 ] && return $r
   
-      get_user_and_domain
-      r=$? && [ $r -ne 0 ] && return $r
+     # get_user_and_domain
+     # r=$? && [ $r -ne 0 ] && return $r
   
-      generate_hostname
-      r=$? && [ $r -ne 0 ] && return $r
+     # generate_hostname
+     # r=$? && [ $r -ne 0 ] && return $r
   
-      prepare_for_adjoin
-      r=$? && [ $r -ne 0 ] && return $r
+     # prepare_for_adjoin
+     # r=$? && [ $r -ne 0 ] && return $r
   
-      do_adjoin
-      r=$? && [ $r -ne 0 ] && return $r
+     # do_adjoin
+     # r=$? && [ $r -ne 0 ] && return $r
       
       install_leave_join_service
     fi
   
-    enable_sshd_password_auth
-    r=$? && [ $r -ne 0 ] && return $r
+   # enable_sshd_password_auth
+   # r=$? && [ $r -ne 0 ] && return $r
 
-    enable_sshd_challenge_response_auth
-    r=$? && [ $r -ne 0 ] && return $r
+    #enable_sshd_challenge_response_auth
+    #r=$? && [ $r -ne 0 ] && return $r
 
     return 0
 }
