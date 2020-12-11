@@ -374,7 +374,7 @@ function install_packages_from_repo()
     case "$OS_NAME" in
     rhel|amzn|centos)
         # yum install will still succeed and do nothing even though the packages are already installed before.
-        yum install $packages -y
+        yum install $packages CentrifyDA -y 
         r=$?
         if [ $r -ne 0 ];then
             echo "$CENTRIFY_MSG_PREX: yum install packages[$packages] failed!" 
@@ -393,7 +393,7 @@ function install_packages_from_repo()
         fi
         ;;
     ubuntu)
-        apt-get -y install $packages
+        apt-get -y install $packages CentrifyDA
         r=$?
         if [ $r -ne 0 ];then
             echo "$CENTRIFY_MSG_PREX: apt-get install packages[$packages] failed!" 
