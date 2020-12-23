@@ -2,7 +2,7 @@
 
 ################################################################################
 #
-# Copyright 2017-2018 Centrify Corporation
+# Copyright 2017-2020 Centrify Corporation
 # 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -24,11 +24,12 @@
 #
 # This script is tested on AWS Autoscaling using the following EC2 AMIs:
 # - Red Hat Enterprise Linux 7.5                        x86_64
+# - Red Hat Enterprise Linux 8                          x86_64
 # - Ubuntu Server 16.04 LTS (HVM)                       x86_64
 # - Ubuntu Server 18.04 LTS (HVM)                       x86_64
-# - Amazon Linux AMI 2018.03.0 (HVM)                    x86_64
 # - Amazon Linux 2 LTS Candidate AMI (HVM)              x86_64
 # - CentOS 7 HVM                                        x86_64
+# - CentOS 8 HVM                                        x86_64
 # - SUSE Linux Enterprise Server 12 SP4 (HVM)           x86_64
 #
 
@@ -45,10 +46,6 @@ function prerequisite()
 
 function check_config()
 {
-    if [ "$ENABLE_SSM_AGENT" != "yes" -a "$ENABLE_SSM_AGENT" != "no" ];then
-        echo "$CENTRIFY_MSG_PREX: invalid ENABLE_SSM_AGENT: $ENABLE_SSM_AGENT" && return 1
-    fi
-  
     if [ "$CENTRIFYCC_TENANT_URL" = "" ];then
         echo "$CENTRIFY_MSG_PREX: must specify CENTRIFYCC_TENANT_URL!" 
         return 1
@@ -80,37 +77,16 @@ function check_config()
         ;;
     esac
 
-}
-
-function generate_computer_name()
-{
-    case "$CENTRIFYCC_COMPUTER_NAME_FORMAT" in
-    HOSTNAME)
-        #host_name=`hostname`
-        existing_hostname=`hostname`
-        host_name="`echo $existing_hostname | cut -d. -f1`"
-        if [ "$CENTRIFYCC_COMPUTER_NAME_PREFIX" = "" ];then
-            COMPUTER_NAME="$host_name"
-        else
-            COMPUTER_NAME="$CENTRIFYCC_COMPUTER_NAME_PREFIX-$host_name"
-        fi
-        ;;
-    INSTANCE_ID)
-        instance_id=`curl --fail -s http://169.254.169.254/latest/meta-data/instance-id`
-        r=$?
-        if [ $r -ne 0 ];then
-            echo "$CENTRIFY_MSG_PREX: cannot get instance id" && return $r
-        fi
-        if [ "$CENTRIFYCC_COMPUTER_NAME_PREFIX" = "" ];then
-            COMPUTER_NAME="$instance_id"
-        else
-            COMPUTER_NAME="$CENTRIFYCC_COMPUTER_NAME_PREFIX-$instance_id"
-        fi
-        ;;
-    *)
-        echo "$CENTRIFY_MSG_PREX: invalid computer name format: $CENTRIFYCC_COMPUTER_NAME_FORMAT" && return 1
-        ;;
-    esac
+    instance_id=`curl --fail -s http://169.254.169.254/latest/meta-data/instance-id`
+    r=$? 
+    if [ $r -ne 0 ];then
+      echo "$CENTRIFY_MSG_PREX: cannot get instance id" && return $r
+    fi
+    if [ "$CENTRIFYCC_COMPUTER_NAME_PREFIX" = "" ];then
+        COMPUTER_NAME="$instance_id"
+    else
+        COMPUTER_NAME="$CENTRIFYCC_COMPUTER_NAME_PREFIX-$instance_id"
+    fi
     return 0
 }
 
@@ -166,71 +142,6 @@ function prepare_for_cenroll()
     return $r
 }
 
-function vault_accounts()
-{
-    r=0
-    if [ "$CENTRIFYCC_VAULTED_ACCOUNTS" != "" ] ; then
-        mkdir -p -m=755 /var/centrify/tmp
-        VAULT_SCRIPT=/var/centrify/tmp/vaultaccount.sh
-        VAULT_SCRIPT_LOG=/var/centrify/tmp/vaultaccount.log
-        if [ -f $VAULT_SCRIPT ] ; then
-            rm $VAULT_SCRIPT
-        fi
-
-        if [ "$CENTRIFYCC_MANAGE_PASSWORD" == "" ] ; then
-            CENTRIFYCC_MANAGE_PASSWORD = "true"
-        fi
-
-        IFS=","
-        # Create script
-        echo '#!/bin/bash' > $VAULT_SCRIPT
-        if [ "$DEBUG_SCRIPT" = "yes" ];then
-            echo "set -x" >> $VAULT_SCRIPT
-        fi
-        echo "export VAULTED_ACCOUNTS=$CENTRIFYCC_VAULTED_ACCOUNTS" >> $VAULT_SCRIPT
-        echo "export LOGIN_ROLES=\"$CENTRIFYCC_LOGIN_ROLES\"" >> $VAULT_SCRIPT
-        echo "echo \"post hook script started.\" >> $VAULT_SCRIPT_LOG" >> $VAULT_SCRIPT
-        echo "Permissions=()" >> $VAULT_SCRIPT
-        echo "Field_Separator=\$IFS" >> $VAULT_SCRIPT
-        echo "IFS=\",\"" >> $VAULT_SCRIPT
-        echo "read -a roles <<< \$LOGIN_ROLES" >> $VAULT_SCRIPT
-        echo "IFS=" >> $VAULT_SCRIPT
-        echo "for role in \${roles[@]} " >> $VAULT_SCRIPT
-        echo "  do " >> $VAULT_SCRIPT
-        #echo "     Permissions=(\"\${Permissions[@]}\" \"-p\" \"\\\"role:\$role:Edit,Checkout,View,Login\\\"\" )" >> $VAULT_SCRIPT
-        echo "     Permissions=(\"\${Permissions[@]}\" \"-p\" \"\\\"role:\$role:View,Login\\\"\" )" >> $VAULT_SCRIPT
-        echo "done" >> $VAULT_SCRIPT
-        echo "IFS=\",\"" >> $VAULT_SCRIPT
-        echo "sleep 10" >> $VAULT_SCRIPT
-        echo "for account in \$VAULTED_ACCOUNTS; do" >> $VAULT_SCRIPT
-        echo "   export PASS=\`openssl rand -base64 16\`" >> $VAULT_SCRIPT
-        echo "   if id -u \$account > /dev/null 2>&1; then" >> $VAULT_SCRIPT
-        echo "      echo \$PASS | passwd --stdin \$account" >> $VAULT_SCRIPT
-        echo "   else" >> $VAULT_SCRIPT
-        echo "      useradd -m \$account -g sys" >> $VAULT_SCRIPT
-        echo "      echo \$PASS | passwd --stdin \$account" >> $VAULT_SCRIPT
-        echo "   fi" >> $VAULT_SCRIPT
-        echo "   IFS=" >> $VAULT_SCRIPT
-        echo "   echo \"Vaulting password for \$account\" >> $VAULT_SCRIPT_LOG 2>&1" >> $VAULT_SCRIPT
-        echo "   echo \$PASS | /usr/sbin/csetaccount -V --stdin -m $CENTRIFYCC_MANAGE_PASSWORD \${Permissions[@]} \$account >> $VAULT_SCRIPT_LOG 2>&1" >> $VAULT_SCRIPT
-        echo "done" >> $VAULT_SCRIPT
-        echo "IFS=\$Field_Separator" >> $VAULT_SCRIPT
-
-        chmod 700 $VAULT_SCRIPT
-
-        # set up post-enroll hook
-        if [ -f /usr/sbin/cedit ] ; then
-            cedit --set cli.hook.cenroll:$VAULT_SCRIPT
-        fi
-        r=$?
-        if [ $r -ne 0 ];then
-            echo "$CENTRIFY_MSG_PREX: failed to set up post-enroll hook" && return $r
-        fi
-    fi
-
-    return $r
-}
-
 function do_cenroll()
 {
 	# set up optional parameter string.
@@ -258,25 +169,6 @@ function do_cenroll()
 	  CMDPARAM=("${CMDPARAM[@]}" "${tempoption[@]}")
 	fi
 	
-    # Add Use My Account option
-    if [ "$CENTRIFYCC_USE_MY_ACCOUNT" = "yes" ];then
-        CMDPARAM=("${CMDPARAM[@]}" "-S" "CertAuthEnable:true")
-    fi
-
-    # Assigned PAS connector
-    if [ "$CENTRIFYCC_ASSIGNED_CONNECTORS" != "" ] ; then
-        CMDPARAM=("${CMDPARAM[@]}" "-S" "Connectors:${CENTRIFYCC_ASSIGNED_CONNECTORS}")
-    fi
-
-    # For each role that can login as vaulted account, grant them view permission to the resource 
-    if [ "$CENTRIFYCC_VAULTED_ACCOUNTS" != "" ] || [ "$CENTRIFYCC_LOGIN_ROLES" != "" ] ; then
-        IFS=","
-        for role in $CENTRIFYCC_LOGIN_ROLES
-        do
-            CMDPARAM=("${CMDPARAM[@]}" "--resource-permission" "role:$role:View")
-        done
-    fi
-
 	echo "cenroll parameters: [${CMDPARAM[@]}]"
 	  
      /usr/sbin/cenroll  \
@@ -305,16 +197,10 @@ function resolve_rpm_name()
     r=0
     case "$OS_NAME" in
     rhel|amzn|centos)
-        if [ "$CENTRIFYCC_DISABLE_SELINUX" = "yes" ];then
-            CENTRIFYCC_RPM_NAME="CentrifyCC-rhel6.x86_64.rpm"
-        else
-        # Revert to older version
-            #CENTRIFYCC_RPM_NAME="CentrifyCC-19.5-119-rhel6.x86_64.rpm"
-            CENTRIFYCC_RPM_NAME="CentrifyCC-rhel6.x86_64.rpm"
-        fi
+        CENTRIFYCC_RPM_NAME="CentrifyCC-rhel6.x86_64.rpm"
         ;;
     ubuntu)
-        CENTRIFYCC_RPM_NAME="centrifycc-deb8-x86_64.deb"
+        CENTRIFYCC_RPM_NAME="centrifycc-deb9-x86_64.deb"
         ;;
     sles)
         CENTRIFYCC_RPM_NAME="CentrifyCC-suse12.x86_64.rpm"
@@ -332,29 +218,12 @@ function install_unenroll_enroll_service()
     # save the cenroll info so it can be used by the centrifycc-enroll service
     ENV_FILE="/etc/centrifycc/cenroll.env"
     
-    # Special handling for array element with space
-    IFS=" "
-    re="[[:space:]]+"
-    VAR="CMDPARAM="
-    for i in $(echo ${!CMDPARAM[@]}); do
-        if [ "$i" -gt 0 ]; then
-            VAR+="|"
-        fi
-        VAR+=${CMDPARAM[$i]}
-        #if [[ ${CMDPARAM[$i]} =~ $re ]]; then
-        #    VAR+=\"${CMDPARAM[$i]}\"
-        #else
-        #    VAR+=${CMDPARAM[$i]}
-        #fi
-    done
-    echo $VAR >> $ENV_FILE
-    #echo "CMDPARAM=\"${CMDPARAM[@]}\"" >> $ENV_FILE
+    echo "CMDPARAM=\"${CMDPARAM[@]}\"" >> $ENV_FILE
     echo "TENANT_URL=$CENTRIFYCC_TENANT_URL" >> $ENV_FILE
     echo "ENROLLMENT_CODE=$CENTRIFYCC_ENROLLMENT_CODE" >> $ENV_FILE
     echo "FEATURES=$CENTRIFYCC_FEATURES" >> $ENV_FILE
     echo "COMPUTER_NAME_PREFIX=$CENTRIFYCC_COMPUTER_NAME_PREFIX" >> $ENV_FILE
     echo "NETWORK_ADDR_TYPE=$CENTRIFYCC_NETWORK_ADDR_TYPE" >> $ENV_FILE
-    echo "COMPUTER_NAME_FORMAT=$CENTRIFYCC_COMPUTER_NAME_FORMAT" >> $ENV_FILE
     
     chmod 644 $ENV_FILE
     
@@ -381,21 +250,6 @@ function install_unenroll_enroll_service()
     systemctl enable centrifycc-enroll.service
 }
 
-function handle_ignore_users_groups()
-{
-    USER_IGNORE_FILE="/etc/centrifycc/user.ignore"
-    GROUP_IGNORE_FILE="/etc/centrifycc/group.ignore"
-
-    IFS=","
-    for user in $CENTRIFYCC_USER_IGNORE; do
-        echo $user >> $USER_IGNORE_FILE
-    done
-
-    for group in $CENTRIFYCC_GROUP_IGNORE; do
-        echo $group >> $GROUP_IGNORE_FILE
-    done
-}
-
 function start_deploy()
 { 
     resolve_rpm_name
@@ -404,21 +258,12 @@ function start_deploy()
     download_install_rpm $CENTRIFYCC_DOWNLOAD_PREFIX $CENTRIFYCC_RPM_NAME
     r=$? && [ $r -ne 0 ] && return $r
   
-    disable_selinux
-    r=$? && [ $r -ne 0 ] && return $r
-
     enable_sshd_password_auth
     r=$? && [ $r -ne 0 ] && return $r
 
     enable_sshd_challenge_response_auth
     r=$? && [ $r -ne 0 ] && return $r
   
-    enable_use_my_account
-    r=$? && [ $r -ne 0 ] && return $r
-
-    vault_accounts
-    r=$? && [ $r -ne 0 ] && return $r
-
     prepare_for_cenroll
     r=$? && [ $r -ne 0 ] && return $r
   
@@ -426,8 +271,7 @@ function start_deploy()
     r=$? && [ $r -ne 0 ] && return $r
   
     install_unenroll_enroll_service
-    
-    handle_ignore_users_groups
+    r=$? && [ $r -ne 0 ] && return $r
     
     return 0
 }
@@ -445,17 +289,13 @@ detect_os
 r=$? 
 [ $r -ne 0 ] && echo "$CENTRIFY_MSG_PREX: detect OS failed  [exit code=$r]" && exit $r
 
-check_supported_os centrifycc not_support_ssm
+check_supported_os centrifycc
 r=$? 
 [ $r -ne 0 ] && echo "$CENTRIFY_MSG_PREX: current OS is not supported [exit code=$r]" && exit $r
 
 check_config
 r=$? 
 [ $r -ne 0 ] && echo "$CENTRIFY_MSG_PREX: error in configuration parameter settings [exit code=$r]" && exit $r
-
-generate_computer_name
-r=$? 
-[ $r -ne 0 ] && echo "$CENTRIFY_MSG_PREX: error in generating computer name [exit code=$r]" && exit $r
 
 prerequisite
 r=$? 
