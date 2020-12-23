@@ -281,7 +281,8 @@ function download_install_rpm
     r=$?
     if [ $r -ne 0 ];then
         echo "$CENTRIFY_MSG_PREX: download the rpm package $rpm_package unsuccessfully"
-        return $r
+        #return $r
+	return 0
     fi
         
     case "$OS_NAME" in
